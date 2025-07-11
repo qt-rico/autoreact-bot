@@ -237,6 +237,7 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		log.Println(ColorBlue + "🏓 /ping command received" + ColorReset)
 		start := time.Now()
 
+		// send initial message
 		cfg := tgbotapi.NewMessage(msg.Chat.ID, "🏓 Pinging...")
 		sentMsg, err := localBot.Send(cfg)
 		if err != nil {
@@ -247,11 +248,11 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		elapsed := float64(time.Since(start).Microseconds()) / 1000 // ms
 		latency := fmt.Sprintf("%.2fms", elapsed)
 
-		text := fmt.Sprintf("🏓 [Pong!](https://t.me/TheCryptoElders) %s", latency)
+		text := fmt.Sprintf("🏓 [Pong\\!](https://t.me/TheCryptoElders) %s", escapeMarkdownV2(latency))
 		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, sentMsg.MessageID, text)
 		edit.ParseMode = "MarkdownV2"
 
-		if _, err := localBot.Request(edit); err != nil {
+		if _, err := localBot.Send(edit); err != nil {
 			logError("pingEdit", localBot.Self.UserName, err)
 		} else {
 			log.Printf(ColorGreen+"⚡ Ping responded in %s"+ColorReset, latency)
@@ -266,6 +267,31 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	}
 
 	reactToMessage(localBot, msg)
+}
+
+// ─── Escape helper ───────────────────────
+func escapeMarkdownV2(s string) string {
+	replacer := strings.NewReplacer(
+		"_", "\\_",
+		"*", "\\*",
+		"[", "\\[",
+		"]", "\\]",
+		"(", "\\(",
+		")", "\\)",
+		"~", "\\~",
+		"`", "\\`",
+		">", "\\>",
+		"#", "\\#",
+		"+", "\\+",
+		"-", "\\-",
+		"=", "\\=",
+		"|", "\\|",
+		"{", "\\{",
+		"}", "\\}",
+		".", "\\.",
+		"!", "\\!",
+	)
+	return replacer.Replace(s)
 }
 
 // ─── Welcome Sender ──────────────────────
