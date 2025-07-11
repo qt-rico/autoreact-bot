@@ -255,10 +255,8 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		return
 	}
 
-	// emoji reaction
-	if msg.Text != "" && !strings.HasPrefix(msg.Text, "/") {
-		reactToMessage(localBot, msg)
-	}
+	// ✅ react to ALL messages
+	reactToMessage(localBot, msg)
 }
 
 // ─── Welcome Sender ──────────────────────
