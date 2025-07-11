@@ -215,27 +215,8 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		botMutex.RLock()
 		for _, bot := range botInstances {
 			for chatID := range subscribers {
-				var err error
-				switch {
-				case msg.Text != "":
-					_, err = bot.Send(tgbotapi.NewMessage(chatID, msg.Text))
-				case msg.Photo != nil:
-					fileID := msg.Photo[len(msg.Photo)-1].FileID
-					_, err = bot.Send(tgbotapi.NewPhoto(chatID, tgbotapi.FileID(fileID)))
-				case msg.Document != nil:
-					_, err = bot.Send(tgbotapi.NewDocument(chatID, tgbotapi.FileID(msg.Document.FileID)))
-				case msg.Video != nil:
-					_, err = bot.Send(tgbotapi.NewVideo(chatID, tgbotapi.FileID(msg.Video.FileID)))
-				case msg.Sticker != nil:
-					_, err = bot.Send(tgbotapi.NewSticker(chatID, tgbotapi.FileID(msg.Sticker.FileID)))
-				case msg.Voice != nil:
-					_, err = bot.Send(tgbotapi.NewVoice(chatID, tgbotapi.FileID(msg.Voice.FileID)))
-				case msg.Audio != nil:
-					_, err = bot.Send(tgbotapi.NewAudio(chatID, tgbotapi.FileID(msg.Audio.FileID)))
-				default:
-					_, err = bot.Send(tgbotapi.NewCopyMessage(chatID, msg.Chat.ID, msg.MessageID))
-				}
-				if err != nil {
+				copy := tgbotapi.NewCopyMessage(chatID, msg.Chat.ID, msg.MessageID)
+				if _, err := bot.Send(copy); err != nil {
 					log.Printf(ColorRed+"❌ [%s] to %d failed: %v"+ColorReset,
 						bot.Self.UserName, chatID, err)
 				} else {
@@ -249,13 +230,13 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		return
 	}
 
-	// normal /start
+	// /start command
 	if msg.IsCommand() && msg.Command() == "start" {
 		sendWelcome(localBot, msg)
 		return
 	}
 
-	// ✅ react to ALL messages
+	// ✅ react to every message
 	reactToMessage(localBot, msg)
 }
 
