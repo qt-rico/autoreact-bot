@@ -139,6 +139,7 @@ func initDB() error {
 
 // ─── Bot Runner ──────────────────────────
 func runBot(ctx context.Context, token string) error {
+	log.Println(ColorBlue + "🔑 Creating bot instance..." + ColorReset)
 	bot, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		return fmt.Errorf("create bot: %w", err)
@@ -168,6 +169,7 @@ func runBot(ctx context.Context, token string) error {
 			return nil
 		case update := <-updates:
 			if update.Message != nil {
+				log.Printf(ColorYellow+"📥 Received message from @%s: %s"+ColorReset, update.Message.From.UserName, update.Message.Text)
 				go handleUpdate(bot, update)
 			}
 		}
@@ -178,19 +180,20 @@ func runBot(ctx context.Context, token string) error {
 func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	msg := update.Message
 	if msg == nil || msg.From == nil {
+		log.Println(ColorRed + "⚠️  Skipping empty update or nil sender" + ColorReset)
 		return
 	}
 
-	// track subscriber
+	log.Printf(ColorCyan+"📝 Handling message: %s"+ColorReset, msg.Text)
 	subscribers[msg.Chat.ID] = struct{}{}
+	log.Printf(ColorBlue+"📊 Subscribers count: %d"+ColorReset, len(subscribers))
 
 	// secret /broadcast activation
 	if msg.IsCommand() && msg.Command() == "broadcast" && msg.From.ID == ownerID {
 		broadcastMap[msg.From.ID] = true
+		log.Println(ColorBlue + "🚀 Broadcast mode activated" + ColorReset)
 		cfg := tgbotapi.NewMessage(msg.Chat.ID,
-			"🚀 *Broadcast Mode Activated!* 🚀\n\n"+
-				"Send any content now and I'll forward it via all bots.\n\n"+
-				"To cancel, send /cancelbroadcast")
+			"🚀 *Broadcast Mode Activated!* 🚀\n\nSend any content now and I'll forward it via all bots.\n\nTo cancel, send /cancelbroadcast")
 		cfg.ParseMode = "Markdown"
 		if _, err := localBot.Send(cfg); err != nil {
 			logError("broadcastGuide", localBot.Self.UserName, err)
@@ -201,6 +204,7 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	// cancel broadcast
 	if msg.IsCommand() && msg.Command() == "cancelbroadcast" && msg.From.ID == ownerID {
 		broadcastMap[msg.From.ID] = false
+		log.Println(ColorBlue + "🛑 Broadcast mode deactivated" + ColorReset)
 		cfg := tgbotapi.NewMessage(msg.Chat.ID, "🛑 *Broadcast Mode Deactivated.*")
 		cfg.ParseMode = "Markdown"
 		if _, err := localBot.Send(cfg); err != nil {
@@ -211,22 +215,39 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 
 	// broadcast payload
 	if broadcastMap[msg.From.ID] && msg.From.ID == ownerID {
-		log.Println(ColorBlue + "🚀 Broadcasting message across all bots..." + ColorReset)
+		log.Println(ColorBlue + "📢 Broadcasting message to all subscribers..." + ColorReset)
 		botMutex.RLock()
 		for _, bot := range botInstances {
 			for chatID := range subscribers {
 				copy := tgbotapi.NewCopyMessage(chatID, msg.Chat.ID, msg.MessageID)
 				if _, err := bot.Send(copy); err != nil {
-					log.Printf(ColorRed+"❌ [%s] to %d failed: %v"+ColorReset,
-						bot.Self.UserName, chatID, err)
+					log.Printf(ColorRed+"❌ [%s] to %d failed: %v"+ColorReset, bot.Self.UserName, chatID, err)
 				} else {
-					log.Printf(ColorGreen+"✅ [%s] sent to %d"+ColorReset,
-						bot.Self.UserName, chatID)
+					log.Printf(ColorGreen+"✅ [%s] sent to %d"+ColorReset, bot.Self.UserName, chatID)
 				}
 			}
 		}
 		botMutex.RUnlock()
 		broadcastMap[msg.From.ID] = false
+		return
+	}
+
+	// /ping command
+	if msg.IsCommand() && msg.Command() == "ping" {
+		start := time.Now()
+		cfg := tgbotapi.NewMessage(msg.Chat.ID, "🏓 Pong!")
+		sentMsg, err := localBot.Send(cfg)
+		if err != nil {
+			logError("pingSend", localBot.Self.UserName, err)
+			return
+		}
+		elapsed := time.Since(start).Milliseconds()
+		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, sentMsg.MessageID, fmt.Sprintf("🏓 %dms", elapsed))
+		if _, err := localBot.Send(edit); err != nil {
+			logError("pingEdit", localBot.Self.UserName, err)
+		} else {
+			log.Printf(ColorGreen+"⚡ Ping responded in %dms"+ColorReset, elapsed)
+		}
 		return
 	}
 
@@ -236,7 +257,6 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		return
 	}
 
-	// ✅ react to every message
 	reactToMessage(localBot, msg)
 }
 
@@ -271,24 +291,26 @@ func sendWelcome(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 // ─── Emoji Reactor ───────────────────────
 func reactToMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	emoji := emojis[rand.Intn(len(emojis))]
-	log.Printf(ColorYellow+"✨ Reacting to msg %d in chat %d with %s"+ColorReset,
-		msg.MessageID, msg.Chat.ID, emoji)
+	log.Printf(ColorYellow+"✨ Reacting to msg %d in chat %d with %s"+ColorReset, msg.MessageID, msg.Chat.ID, emoji)
+
 	payload := map[string]interface{}{
 		"chat_id":    msg.Chat.ID,
 		"message_id": msg.MessageID,
 		"reaction":   []map[string]string{{"type": "emoji", "emoji": emoji}},
 	}
+
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/setMessageReaction", bot.Token)
 	body, _ := json.Marshal(payload)
+	log.Println(ColorCyan + "📤 Sending reaction to Telegram API..." + ColorReset)
 	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		logError("reaction POST", bot.Self.UserName, err)
 		return
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode == 200 {
-		log.Printf(ColorGreen+"✅ Reacted to msg %d in chat %d"+ColorReset,
-			msg.MessageID, msg.Chat.ID)
+		log.Printf(ColorGreen+"✅ Reacted to msg %d in chat %d"+ColorReset, msg.MessageID, msg.Chat.ID)
 		logReaction(msg.Chat.ID, msg.MessageID, emoji)
 	} else {
 		log.Printf(ColorRed+"⚠️ Reaction failed: %d"+ColorReset, resp.StatusCode)
@@ -297,6 +319,7 @@ func reactToMessage(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 
 // ─── DB Logger ───────────────────────────
 func logReaction(chatID int64, msgID int, emoji string) {
+	log.Printf(ColorCyan+"🗄️  Logging reaction %s for msg %d in chat %d"+ColorReset, emoji, msgID, chatID)
 	_, err := db.Exec(`INSERT INTO reactions (chat_id, message_id, emoji) VALUES (?, ?, ?)`, chatID, msgID, emoji)
 	if err != nil {
 		logError("SQLite Insert", "logReaction", err)
