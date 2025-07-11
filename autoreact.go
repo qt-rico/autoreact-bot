@@ -233,23 +233,33 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	}
 
 	// /ping command
-	if msg.IsCommand() && msg.Command() == "ping" {
-		start := time.Now()
-		cfg := tgbotapi.NewMessage(msg.Chat.ID, "🏓 Pong!")
-		sentMsg, err := localBot.Send(cfg)
-		if err != nil {
-			logError("pingSend", localBot.Self.UserName, err)
-			return
-		}
-		elapsed := time.Since(start).Milliseconds()
-		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, sentMsg.MessageID, fmt.Sprintf("🏓 %dms", elapsed))
-		if _, err := localBot.Send(edit); err != nil {
-			logError("pingEdit", localBot.Self.UserName, err)
-		} else {
-			log.Printf(ColorGreen+"⚡ Ping responded in %dms"+ColorReset, elapsed)
-		}
+if msg.IsCommand() && msg.Command() == "ping" {
+	log.Println(ColorBlue + "🏓 /ping command received" + ColorReset)
+	start := time.Now()
+
+	// send initial message to measure latency
+	cfg := tgbotapi.NewMessage(msg.Chat.ID, "🏓 Pinging...")
+	sentMsg, err := localBot.Send(cfg)
+	if err != nil {
+		logError("pingSend", localBot.Self.UserName, err)
 		return
 	}
+
+	elapsed := float64(time.Since(start).Microseconds()) / 1000 // ms as float
+	latency := fmt.Sprintf("%.2fms", elapsed)
+
+	// use MarkdownV2, escape special chars if needed
+	text := fmt.Sprintf("🏓 [Pong!](https://t.me/TheCryptoElders) %s", latency)
+	edit := tgbotapi.NewEditMessageText(msg.Chat.ID, sentMsg.MessageID, text)
+	edit.ParseMode = "MarkdownV2"
+
+	if _, err := localBot.Send(edit); err != nil {
+		logError("pingEdit", localBot.Self.UserName, err)
+	} else {
+		log.Printf(ColorGreen+"⚡ Ping responded in %s"+ColorReset, latency)
+	}
+	return
+}
 
 	// /start command
 	if msg.IsCommand() && msg.Command() == "start" {
