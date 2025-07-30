@@ -358,7 +358,7 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			),
 		)
 		
-		message := "💖 *Reactions Started!* 💖\n\n" +
+		message := "💖 Reactions Started! 💖\n\n" +
 			"I'm now actively reacting to messages in this group with fun emojis! ✨\n\n" +
 			"Use /end to stop reactions anytime.\n\n" +
 			"<i>Let's make this chat more lively! 💞</i>"
