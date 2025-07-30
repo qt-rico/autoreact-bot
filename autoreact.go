@@ -87,6 +87,10 @@ var (
 	botInstances []*tgbotapi.BotAPI           // all bot instances
 	botMutex     sync.RWMutex                 // protects botInstances
 
+	// Group reaction control
+	groupReactions = make(map[int64]bool)     // chatID -> reactions enabled/disabled
+	reactionMutex  sync.RWMutex              // protects groupReactions
+
 	emojis = []string{
 		"❤️", "👍", "🔥", "🥰", "👏", "😁", "🤔", "🤯", "😱", "🤬", "😢", "🎉",
 		"🤩", "🤮", "💩", "🙏", "👌", "🕊️", "🤡", "🥱", "🥴", "😍", "🐳", "❤️‍🔥",
@@ -145,6 +149,31 @@ func getEnv(key, fallback string) string {
 	return val
 }
 
+// ─── Chat Type Checker ───────────────────
+func isGroup(chat *tgbotapi.Chat) bool {
+	return chat.Type == "group" || chat.Type == "supergroup"
+}
+
+// ─── Group Reaction Status ───────────────
+func areReactionsEnabled(chatID int64) bool {
+	reactionMutex.RLock()
+	defer reactionMutex.RUnlock()
+	enabled, exists := groupReactions[chatID]
+	// Default is enabled for private chats and groups that haven't set preference
+	if !exists {
+		return true
+	}
+	return enabled
+}
+
+func setReactionsEnabled(chatID int64, enabled bool) {
+	reactionMutex.Lock()
+	defer reactionMutex.Unlock()
+	groupReactions[chatID] = enabled
+	log.Printf(ColorBlue+"🎛️  Reactions %s for chat %d"+ColorReset, 
+		map[bool]string{true: "ENABLED", false: "DISABLED"}[enabled], chatID)
+}
+
 // ─── Dummy Server ────────────────────────
 func startDummyServer() {
 	port := getEnv("PORT", "10000")
@@ -197,6 +226,8 @@ func runBot(ctx context.Context, token string) error {
 
 	bot.Request(tgbotapi.NewSetMyCommands(
 		tgbotapi.BotCommand{Command: "start", Description: "Show welcome message"},
+		tgbotapi.BotCommand{Command: "begin", Description: "Start reactions in group"},
+		tgbotapi.BotCommand{Command: "end", Description: "Stop reactions in group"},
 	))
 
 	u := tgbotapi.NewUpdate(0)
@@ -302,8 +333,101 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		return
 	}
 
-	// /ping command
+	// /begin command - only for groups
+	if msg.IsCommand() && msg.Command() == "begin" {
+		if !isGroup(msg.Chat) {
+			cfg := tgbotapi.NewMessage(msg.Chat.ID, "❌ This command only works in groups!")
+			if _, err := localBot.Send(cfg); err != nil {
+				logError("beginPrivateError", localBot.Self.UserName, err)
+			}
+			return
+		}
+		
+		setReactionsEnabled(msg.Chat.ID, true)
+		
+		// React to the command first
+		go reactToMessage(localBot, msg)
+		
+		// Send confirmation with random image
+		randomImage := SAKURA_IMAGES[rand.Intn(len(SAKURA_IMAGES))]
+		
+		kb := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonURL("Updates", channelURL),
+				tgbotapi.NewInlineKeyboardButtonURL("Support", groupURL),
+			),
+		)
+		
+		message := "🎉 *Reactions Started!* 🎉\n\n" +
+			"I'm now actively reacting to messages in this group with fun emojis! ✨\n\n" +
+			"Use /end to stop reactions anytime.\n\n" +
+			"<i>Let's make this chat more lively! 🚀</i>"
+		
+		photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FileURL(randomImage))
+		photo.Caption = message
+		photo.ParseMode = "HTML"
+		photo.ReplyMarkup = kb
+		
+		if _, err := localBot.Send(photo); err != nil {
+			log.Printf(ColorRed+"❌ Failed to send begin photo, falling back to text: %v"+ColorReset, err)
+			cfg := tgbotapi.NewMessage(msg.Chat.ID, message)
+			cfg.ParseMode = "HTML"
+			cfg.ReplyMarkup = kb
+			if _, err := localBot.Send(cfg); err != nil {
+				logError("beginFallback", localBot.Self.UserName, err)
+			}
+		}
+		
+		log.Printf(ColorGreen+"✅ Reactions enabled for group %d"+ColorReset, msg.Chat.ID)
+		return
+	}
+
+	// /end command - only for groups
+	if msg.IsCommand() && msg.Command() == "end" {
+		if !isGroup(msg.Chat) {
+			cfg := tgbotapi.NewMessage(msg.Chat.ID, "❌ This command only works in groups!")
+			if _, err := localBot.Send(cfg); err != nil {
+				logError("endPrivateError", localBot.Self.UserName, err)
+			}
+			return
+		}
+		
+		setReactionsEnabled(msg.Chat.ID, false)
+		
+		cfg := tgbotapi.NewMessage(msg.Chat.ID, 
+			"🛑 *Reactions Stopped!* 🛑\n\n"+
+			"I've stopped reacting to messages in this group.\n\n"+
+			"Use /begin to start reactions again! ✨")
+		cfg.ParseMode = "HTML"
+		
+		if _, err := localBot.Send(cfg); err != nil {
+			logError("endCommand", localBot.Self.UserName, err)
+		}
+		
+		log.Printf(ColorYellow+"🛑 Reactions disabled for group %d"+ColorReset, msg.Chat.ID)
+		return
+	}
+
+	// /start command - different behavior for groups vs private
+	if msg.IsCommand() && msg.Command() == "start" {
+		if isGroup(msg.Chat) {
+			// Group start command with image
+			sendGroupWelcome(localBot, msg)
+		} else {
+			// Private start command (original behavior)
+			go reactToMessage(localBot, msg)
+			sendWelcome(localBot, msg)
+		}
+		return
+	}
+
+	// /ping command - react first, then respond
 	if msg.IsCommand() && msg.Command() == "ping" {
+		// Only react if reactions are enabled or in private chat
+		if !isGroup(msg.Chat) || areReactionsEnabled(msg.Chat.ID) {
+			go reactToMessage(localBot, msg)
+		}
+		
 		log.Println(ColorBlue + "🏓 /ping command received" + ColorReset)
 		start := time.Now()
 
@@ -318,7 +442,7 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		elapsed := float64(time.Since(start).Microseconds()) / 1000 // ms
 		latency := fmt.Sprintf("%.2fms", elapsed)
 
-		text := fmt.Sprintf("🏓 [Pong\\!](https://t.me/SoulMeets) %s", escapeMarkdownV2(latency))
+		text := fmt.Sprintf("🏓 [Pong\\!](https://t.me/TheCryptoElders) %s", escapeMarkdownV2(latency))
 		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, sentMsg.MessageID, text)
 		edit.ParseMode = "MarkdownV2"
 
@@ -327,17 +451,19 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		} else {
 			log.Printf(ColorGreen+"⚡ Ping responded in %s"+ColorReset, latency)
 		}
-		// Don't return here - let it fall through to react
+		return
 	}
 
-	// /start command
-	if msg.IsCommand() && msg.Command() == "start" {
-		sendWelcome(localBot, msg)
-		// Don't return here - let it fall through to react
+	// React to regular messages based on chat type and settings
+	if !isGroup(msg.Chat) {
+		// Always react in private chats
+		reactToMessage(localBot, msg)
+	} else if areReactionsEnabled(msg.Chat.ID) {
+		// Only react in groups if reactions are enabled
+		reactToMessage(localBot, msg)
+	} else {
+		log.Printf(ColorYellow+"⏸️  Skipping reaction for group %d (reactions disabled)"+ColorReset, msg.Chat.ID)
 	}
-
-	// React to ALL messages (including commands)
-	reactToMessage(localBot, msg)
 }
 
 // ─── Escape helper ───────────────────────
@@ -365,13 +491,56 @@ func escapeMarkdownV2(s string) string {
 	return replacer.Replace(s)
 }
 
-// ─── Welcome Sender ──────────────────────
-func sendWelcome(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
-	log.Printf(ColorBlue+"👋 /start by @%s in %d"+ColorReset, msg.From.UserName, msg.Chat.ID)
+// ─── Group Welcome Sender ────────────────
+func sendGroupWelcome(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
+	log.Printf(ColorBlue+"👋 Group /start by @%s in %d"+ColorReset, msg.From.UserName, msg.Chat.ID)
 
 	// Select a random Sakura image
 	randomImage := SAKURA_IMAGES[rand.Intn(len(SAKURA_IMAGES))]
-	log.Printf(ColorCyan+"🌸 Selected random Sakura image: %s"+ColorReset, randomImage)
+	log.Printf(ColorCyan+"🌸 Selected random Sakura image for group: %s"+ColorReset, randomImage)
+
+	kb := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL("Updates", channelURL),
+			tgbotapi.NewInlineKeyboardButtonURL("Support", groupURL),
+		),
+	)
+
+	message := "🎉 *Hello Group!* I'm <b>ReactionBot</b>! 🎉\n\n" +
+		"I'm here to make your group more fun with automatic emoji reactions! ✨\n\n" +
+		"📋 <b>Group Commands:</b>\n" +
+		"• /begin - Start reactions\n" +
+		"• /end - Stop reactions\n" +
+		"• /ping - Check my response time\n\n" +
+		"<i>Ready to bring some life to your conversations! 🚀</i>"
+
+	// Send photo with caption
+	photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FileURL(randomImage))
+	photo.Caption = message
+	photo.ParseMode = "HTML"
+	photo.ReplyMarkup = kb
+
+	if _, err := bot.Send(photo); err != nil {
+		log.Printf(ColorRed+"❌ Failed to send group photo, falling back to text: %v"+ColorReset, err)
+		// Fallback to text message if photo fails
+		cfg := tgbotapi.NewMessage(msg.Chat.ID, message)
+		cfg.ParseMode = "HTML"
+		cfg.ReplyMarkup = kb
+		if _, err := bot.Send(cfg); err != nil {
+			logError("sendGroupWelcome fallback", bot.Self.UserName, err)
+		}
+	} else {
+		log.Printf(ColorGreen+"✅ Group welcome message with image sent successfully"+ColorReset)
+	}
+}
+
+// ─── Private Welcome Sender ──────────────
+func sendWelcome(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
+	log.Printf(ColorBlue+"👋 Private /start by @%s in %d"+ColorReset, msg.From.UserName, msg.Chat.ID)
+
+	// Select a random Sakura image
+	randomImage := SAKURA_IMAGES[rand.Intn(len(SAKURA_IMAGES))]
+	log.Printf(ColorCyan+"🌸 Selected random Sakura image for private: %s"+ColorReset, randomImage)
 
 	kb := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -395,7 +564,7 @@ func sendWelcome(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	photo.ReplyMarkup = kb
 
 	if _, err := bot.Send(photo); err != nil {
-		log.Printf(ColorRed+"❌ Failed to send photo, falling back to text message: %v"+ColorReset, err)
+		log.Printf(ColorRed+"❌ Failed to send private photo, falling back to text: %v"+ColorReset, err)
 		// Fallback to text message if photo fails
 		cfg := tgbotapi.NewMessage(msg.Chat.ID, message)
 		cfg.ParseMode = "HTML"
@@ -404,7 +573,7 @@ func sendWelcome(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 			logError("sendWelcome fallback", bot.Self.UserName, err)
 		}
 	} else {
-		log.Printf(ColorGreen+"✅ Welcome message with Sakura image sent successfully"+ColorReset)
+		log.Printf(ColorGreen+"✅ Private welcome message with image sent successfully"+ColorReset)
 	}
 }
 
