@@ -445,6 +445,7 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		text := fmt.Sprintf("🏓 [Pong\\!](https://t.me/SoulMeetsHQ) %s", escapeMarkdownV2(latency))
 		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, sentMsg.MessageID, text)
 		edit.ParseMode = "MarkdownV2"
+		edit.DisableWebPagePreview = true
 
 		if _, err := localBot.Send(edit); err != nil {
 			logError("pingEdit", localBot.Self.UserName, err)
