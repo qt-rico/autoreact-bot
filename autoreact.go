@@ -358,10 +358,10 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			),
 		)
 		
-		message := "🎉 *Reactions Started!* 🎉\n\n" +
+		message := "💖 *Reactions Started!* 💖\n\n" +
 			"I'm now actively reacting to messages in this group with fun emojis! ✨\n\n" +
 			"Use /end to stop reactions anytime.\n\n" +
-			"<i>Let's make this chat more lively! 🚀</i>"
+			"<i>Let's make this chat more lively! 💞</i>"
 		
 		photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FileURL(randomImage))
 		photo.Caption = message
@@ -395,7 +395,7 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		setReactionsEnabled(msg.Chat.ID, false)
 		
 		cfg := tgbotapi.NewMessage(msg.Chat.ID, 
-			"🛑 *Reactions Stopped!* 🛑\n\n"+
+			"👋 Reactions Stopped! 👋\n\n"+
 			"I've stopped reacting to messages in this group.\n\n"+
 			"Use /begin to start reactions again! ✨")
 		cfg.ParseMode = "HTML"
@@ -442,7 +442,7 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		elapsed := float64(time.Since(start).Microseconds()) / 1000 // ms
 		latency := fmt.Sprintf("%.2fms", elapsed)
 
-		text := fmt.Sprintf("🏓 [Pong\\!](https://t.me/TheCryptoElders) %s", escapeMarkdownV2(latency))
+		text := fmt.Sprintf("🏓 [Pong\\!](https://t.me/SoulMeetsHQ) %s", escapeMarkdownV2(latency))
 		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, sentMsg.MessageID, text)
 		edit.ParseMode = "MarkdownV2"
 
@@ -506,13 +506,13 @@ func sendGroupWelcome(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		),
 	)
 
-	message := "🎉 *Hello Group!* I'm <b>ReactionBot</b>! 🎉\n\n" +
+	message := "❤️ Hello Everyone! I'm <b>ReactionBot</b>!\n\n" +
 		"I'm here to make your group more fun with automatic emoji reactions! ✨\n\n" +
 		"📋 <b>Group Commands:</b>\n" +
 		"• /begin - Start reactions\n" +
 		"• /end - Stop reactions\n" +
 		"• /ping - Check my response time\n\n" +
-		"<i>Ready to bring some life to your conversations! 🚀</i>"
+		"<i>Ready to bring some life to your conversations! 💞</i>"
 
 	// Send photo with caption
 	photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FileURL(randomImage))
