@@ -29,6 +29,50 @@ const (
 	ColorFatal  = "\033[1;41m"
 )
 
+// ─── Sakura Images ───────────────────────
+var SAKURA_IMAGES = []string{
+	"https://ik.imagekit.io/asadofc/Images1.png",
+	"https://ik.imagekit.io/asadofc/Images2.png",
+	"https://ik.imagekit.io/asadofc/Images3.png",
+	"https://ik.imagekit.io/asadofc/Images4.png",
+	"https://ik.imagekit.io/asadofc/Images5.png",
+	"https://ik.imagekit.io/asadofc/Images6.png",
+	"https://ik.imagekit.io/asadofc/Images7.png",
+	"https://ik.imagekit.io/asadofc/Images8.png",
+	"https://ik.imagekit.io/asadofc/Images9.png",
+	"https://ik.imagekit.io/asadofc/Images10.png",
+	"https://ik.imagekit.io/asadofc/Images11.png",
+	"https://ik.imagekit.io/asadofc/Images12.png",
+	"https://ik.imagekit.io/asadofc/Images13.png",
+	"https://ik.imagekit.io/asadofc/Images14.png",
+	"https://ik.imagekit.io/asadofc/Images15.png",
+	"https://ik.imagekit.io/asadofc/Images16.png",
+	"https://ik.imagekit.io/asadofc/Images17.png",
+	"https://ik.imagekit.io/asadofc/Images18.png",
+	"https://ik.imagekit.io/asadofc/Images19.png",
+	"https://ik.imagekit.io/asadofc/Images20.png",
+	"https://ik.imagekit.io/asadofc/Images21.png",
+	"https://ik.imagekit.io/asadofc/Images22.png",
+	"https://ik.imagekit.io/asadofc/Images23.png",
+	"https://ik.imagekit.io/asadofc/Images24.png",
+	"https://ik.imagekit.io/asadofc/Images25.png",
+	"https://ik.imagekit.io/asadofc/Images26.png",
+	"https://ik.imagekit.io/asadofc/Images27.png",
+	"https://ik.imagekit.io/asadofc/Images28.png",
+	"https://ik.imagekit.io/asadofc/Images29.png",
+	"https://ik.imagekit.io/asadofc/Images30.png",
+	"https://ik.imagekit.io/asadofc/Images31.png",
+	"https://ik.imagekit.io/asadofc/Images32.png",
+	"https://ik.imagekit.io/asadofc/Images33.png",
+	"https://ik.imagekit.io/asadofc/Images34.png",
+	"https://ik.imagekit.io/asadofc/Images35.png",
+	"https://ik.imagekit.io/asadofc/Images36.png",
+	"https://ik.imagekit.io/asadofc/Images37.png",
+	"https://ik.imagekit.io/asadofc/Images38.png",
+	"https://ik.imagekit.io/asadofc/Images39.png",
+	"https://ik.imagekit.io/asadofc/Images40.png",
+}
+
 // ─── Globals ─────────────────────────────
 var (
 	channelURL   = getEnv("CHANNEL_URL", "https://t.me/example")
@@ -190,10 +234,12 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 
 	// secret /broadcast activation
 	if msg.IsCommand() && msg.Command() == "broadcast" && msg.From.ID == ownerID {
-		broadcastMap[msg.From.ID] = true
-		log.Println(ColorBlue + "🚀 Broadcast mode activated" + ColorReset)
+		mutex.Lock()
+		broadcastMap[ownerID] = true
+		mutex.Unlock()
+		log.Printf(ColorBlue+"🚀 Broadcast mode activated by @%s via bot %s"+ColorReset, msg.From.UserName, localBot.Self.UserName)
 		cfg := tgbotapi.NewMessage(msg.Chat.ID,
-			"🚀 *Broadcast Mode Activated!* 🚀\n\nSend any content now and I'll forward it via all bots.\n\nTo cancel, send /cancelbroadcast")
+			"🚀 *Broadcast Mode Activated!* 🚀\n\nSend any content now and I'll forward it via ALL bots to all subscribers.\n\nTo cancel, send /cancelbroadcast")
 		cfg.ParseMode = "Markdown"
 		if _, err := localBot.Send(cfg); err != nil {
 			logError("broadcastGuide", localBot.Self.UserName, err)
@@ -203,8 +249,10 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 
 	// cancel broadcast
 	if msg.IsCommand() && msg.Command() == "cancelbroadcast" && msg.From.ID == ownerID {
-		broadcastMap[msg.From.ID] = false
-		log.Println(ColorBlue + "🛑 Broadcast mode deactivated" + ColorReset)
+		mutex.Lock()
+		broadcastMap[ownerID] = false
+		mutex.Unlock()
+		log.Printf(ColorBlue+"🛑 Broadcast mode deactivated by @%s via bot %s"+ColorReset, msg.From.UserName, localBot.Self.UserName)
 		cfg := tgbotapi.NewMessage(msg.Chat.ID, "🛑 *Broadcast Mode Deactivated.*")
 		cfg.ParseMode = "Markdown"
 		if _, err := localBot.Send(cfg); err != nil {
@@ -213,22 +261,44 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		return
 	}
 
-	// broadcast payload
-	if broadcastMap[msg.From.ID] && msg.From.ID == ownerID {
-		log.Println(ColorBlue + "📢 Broadcasting message to all subscribers..." + ColorReset)
+	// broadcast payload - check if owner is in broadcast mode
+	mutex.Lock()
+	isBroadcasting := broadcastMap[ownerID]
+	mutex.Unlock()
+	
+	if isBroadcasting && msg.From.ID == ownerID {
+		log.Printf(ColorBlue+"📢 Broadcasting message from @%s via bot %s to all subscribers..."+ColorReset, msg.From.UserName, localBot.Self.UserName)
+		
+		var successCount, failCount int
 		botMutex.RLock()
 		for _, bot := range botInstances {
 			for chatID := range subscribers {
 				copy := tgbotapi.NewCopyMessage(chatID, msg.Chat.ID, msg.MessageID)
 				if _, err := bot.Send(copy); err != nil {
 					log.Printf(ColorRed+"❌ [%s] to %d failed: %v"+ColorReset, bot.Self.UserName, chatID, err)
+					failCount++
 				} else {
 					log.Printf(ColorGreen+"✅ [%s] sent to %d"+ColorReset, bot.Self.UserName, chatID)
+					successCount++
 				}
 			}
 		}
 		botMutex.RUnlock()
-		broadcastMap[msg.From.ID] = false
+		
+		// Send broadcast summary
+		summary := fmt.Sprintf("📊 *Broadcast Complete!*\n\n✅ Successful: %d\n❌ Failed: %d\n🤖 Total Bots: %d\n👥 Total Subscribers: %d", 
+			successCount, failCount, len(botInstances), len(subscribers))
+		cfg := tgbotapi.NewMessage(msg.Chat.ID, summary)
+		cfg.ParseMode = "Markdown"
+		if _, err := localBot.Send(cfg); err != nil {
+			logError("broadcastSummary", localBot.Self.UserName, err)
+		}
+		
+		// Auto-deactivate broadcast mode after sending
+		mutex.Lock()
+		broadcastMap[ownerID] = false
+		mutex.Unlock()
+		log.Println(ColorBlue + "🛑 Broadcast mode auto-deactivated after sending" + ColorReset)
 		return
 	}
 
@@ -248,7 +318,7 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		elapsed := float64(time.Since(start).Microseconds()) / 1000 // ms
 		latency := fmt.Sprintf("%.2fms", elapsed)
 
-		text := fmt.Sprintf("🏓 [Pong\\!](https://t.me/TheCryptoElders) %s", escapeMarkdownV2(latency))
+		text := fmt.Sprintf("🏓 [Pong\\!](https://t.me/SoulMeets) %s", escapeMarkdownV2(latency))
 		edit := tgbotapi.NewEditMessageText(msg.Chat.ID, sentMsg.MessageID, text)
 		edit.ParseMode = "MarkdownV2"
 
@@ -257,15 +327,16 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		} else {
 			log.Printf(ColorGreen+"⚡ Ping responded in %s"+ColorReset, latency)
 		}
-		return
+		// Don't return here - let it fall through to react
 	}
 
 	// /start command
 	if msg.IsCommand() && msg.Command() == "start" {
 		sendWelcome(localBot, msg)
-		return
+		// Don't return here - let it fall through to react
 	}
 
+	// React to ALL messages (including commands)
 	reactToMessage(localBot, msg)
 }
 
@@ -298,6 +369,10 @@ func escapeMarkdownV2(s string) string {
 func sendWelcome(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 	log.Printf(ColorBlue+"👋 /start by @%s in %d"+ColorReset, msg.From.UserName, msg.Chat.ID)
 
+	// Select a random Sakura image
+	randomImage := SAKURA_IMAGES[rand.Intn(len(SAKURA_IMAGES))]
+	log.Printf(ColorCyan+"🌸 Selected random Sakura image: %s"+ColorReset, randomImage)
+
 	kb := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonURL("Updates", channelURL),
@@ -313,12 +388,23 @@ func sendWelcome(bot *tgbotapi.BotAPI, msg *tgbotapi.Message) {
 		"Just add me to your group and enjoy the reactions!\n\n" +
 		"<i>P.S. I work best when I have a little admin magic 😉</i>"
 
-	cfg := tgbotapi.NewMessage(msg.Chat.ID, message)
-	cfg.ParseMode = "HTML"
-	cfg.ReplyMarkup = kb
+	// Send photo with caption
+	photo := tgbotapi.NewPhoto(msg.Chat.ID, tgbotapi.FileURL(randomImage))
+	photo.Caption = message
+	photo.ParseMode = "HTML"
+	photo.ReplyMarkup = kb
 
-	if _, err := bot.Send(cfg); err != nil {
-		logError("sendWelcome", bot.Self.UserName, err)
+	if _, err := bot.Send(photo); err != nil {
+		log.Printf(ColorRed+"❌ Failed to send photo, falling back to text message: %v"+ColorReset, err)
+		// Fallback to text message if photo fails
+		cfg := tgbotapi.NewMessage(msg.Chat.ID, message)
+		cfg.ParseMode = "HTML"
+		cfg.ReplyMarkup = kb
+		if _, err := bot.Send(cfg); err != nil {
+			logError("sendWelcome fallback", bot.Self.UserName, err)
+		}
+	} else {
+		log.Printf(ColorGreen+"✅ Welcome message with Sakura image sent successfully"+ColorReset)
 	}
 }
 
