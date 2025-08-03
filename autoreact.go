@@ -431,8 +431,17 @@ func handleUpdate(localBot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		log.Println(ColorBlue + "🏓 /ping command received" + ColorReset)
 		start := time.Now()
 
-		// send initial message
-		cfg := tgbotapi.NewMessage(msg.Chat.ID, "🏓 Pinging...")
+		// Create initial message - reply in groups, simple message in private
+		var cfg tgbotapi.MessageConfig
+		if isGroup(msg.Chat) {
+			// In groups: reply to the original message
+			cfg = tgbotapi.NewMessage(msg.Chat.ID, "🛰️ Pinging...")
+			cfg.ReplyToMessageID = msg.MessageID
+		} else {
+			// In private: send simple message without reply
+			cfg = tgbotapi.NewMessage(msg.Chat.ID, "🛰️ Pinging...")
+		}
+
 		sentMsg, err := localBot.Send(cfg)
 		if err != nil {
 			logError("pingSend", localBot.Self.UserName, err)
