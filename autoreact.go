@@ -18,7 +18,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// ─── Colors ───────────────────────
+// ─── Colors ──────────────────────
 const (
 	ColorReset  = "\033[0m"
 	ColorRed    = "\033[1;31m"
